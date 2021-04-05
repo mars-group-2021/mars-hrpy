@@ -91,7 +91,7 @@ def repaircolumn(column):
     position = 0
     currentvalue = 0
     for value in column:
-        #if spot is empty, average of last valid value and next valid value is added
+        #if spot is empty, average of last valid value and next valid value is inserted
         if value == ' ':
             position+=1
             nextvalue = float(findnextvalue(column, position, currentvalue))
@@ -99,6 +99,8 @@ def repaircolumn(column):
             newvalue = (currentvalue + nextvalue)/2
             #append the new value to the list
             newcolumn.append(newvalue)
+            #set currentvalue to be the newvalue
+            currentvalue = newvalue
         #if value is a float, it is added to new list
         elif type(value)==float:
             newcolumn.append(value)
@@ -111,64 +113,21 @@ def repaircolumn(column):
             position+=1
     return newcolumn
 
-#determine sampling period
-#if sample periods are different between nodes, the shorter of the two is used
-def samplefrequency(frequency_list):
-    #convert strings to integers
-    frequency_list = [int(i) for i in frequency_list]
-    sample_frequency = 2000000
-    for fs in frequency:
-        if fs < sample_frequency:
-            sample_frequency = fs
-    return sample_frequency
-
 #remove rows that are not at 8ms intervals
-def time_correction_remove(sample_period, column):
-    #find number of samples to be removed
-    c_factor = 8/sample_period
+def time_correction_remove(column):
+    #set correction factor
+    #each row is 2ms, so it will always be 4 (i.e. only every 4th row will be used)
+    c_factor = 4
     #new list
     new_column=[]
-    i=0
-    #remove rows that whose indexes are not divisible by number of samples to be removed
+    i=1
+    #only add rows at 8 ms intervals
     while i < len(column):
         if i%c_factor==0:
-            new_column.append(column[i])
+            new_column.append(column[i-1])
             i+=1
         else:
             i+=1
-    return new_column
-
-
-#extrapolates from data to find projected intermediate values
-def time_correction_add(sample_period, column):
-    c_factor = sample_period/8
-    new_column = []
-    i=0
-    j=1
-    #add first value of the column to new column
-    new_column.append(column[i])
-    while j < len(column):
-        #number of values to add between first and second values in column 
-        y=c_factor-1
-        while y > 0:
-            #lower value
-            low_val = new_column[i]
-            #higher value
-            high_val = column[j]
-            #average of high and low values
-            new_val = (low_val+high_val)/2
-            #add average to new list
-            new_column.append(new_val)
-            #one less value to add to list
-            y-=1
-            #increase index value for the new list
-            i+=1
-        #add the second value from the first list to the new list
-        new_column.append(column[j])
-        #increase index in new list
-        i+=1
-        #increase index in first list
-        j+=1
     return new_column
 
 ##main
@@ -202,27 +161,22 @@ try:
 except:
     print("An error occured reading the csv file.")
 
-#find lowest time period:
-period = samplefrequency(frequency)
+#replace any nan values in the dataframe with a space
+df=df.fillna(" ")
 
 #create new dataframe
 df_mod=pd.DataFrame()
+
 #cycle columns from data frame through repair function
 for columnname in ids:
     print("Working on column ", columnname)
     #extract column from dataframe
     columnlist=df[columnname].tolist()
+    #new column with no missing values
+    repairedcolumn = repaircolumn(columnlist)
     #set time interval to 8ms
-    #remove or add intervals as necessary
-    if period < 8:
-        intermediate_column=time_correction_remove(period, columnlist)
-        #new column with no missing values
-        repairedcolumn = repaircolumn(columnlist)
-    elif period > 8:
-        intermediate_column = repaircolumn(columnlist)
-        repairedcolumn = time_correction_add(period, columnlist)
-    else:
-        repairedcolumn = repaircolumn(columnlist)
+    #remove rows so that all time points are 8ms apart
+    repairedcolumn=time_correction_remove(repairedcolumn)
     #add repaired column to new dataframe
     df_mod[columnname] = repairedcolumn
 
@@ -230,6 +184,7 @@ for columnname in ids:
 sfreq = 1000/8
 
 #turn dataframe into a csv
+print("Writing new csv: ", new_csv_name)
 df_mod.to_csv(new_csv_name, index=False)
 #convert csv file to hea and dat
 print("Converting to MIT format")
